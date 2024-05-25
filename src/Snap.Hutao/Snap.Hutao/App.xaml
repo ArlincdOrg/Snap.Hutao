@@ -7,7 +7,6 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources/>
                 <ResourceDictionary Source="ms-appx:///CommunityToolkit.WinUI.Controls.SettingsControls/SettingsCard/SettingsCard.xaml"/>
-                <ResourceDictionary Source="ms-appx:///CommunityToolkit.WinUI.Controls.TokenizingTextBox/TokenizingTextBox.xaml"/>
                 <ResourceDictionary Source="ms-appx:///Control/Loading.xaml"/>
                 <ResourceDictionary Source="ms-appx:///Control/Image/CachedImage.xaml"/>
                 <ResourceDictionary Source="ms-appx:///Control/Theme/Card.xaml"/>
@@ -30,6 +29,7 @@
                 <ResourceDictionary Source="ms-appx:///Control/Theme/TransitionCollection.xaml"/>
                 <ResourceDictionary Source="ms-appx:///Control/Theme/Uri.xaml"/>
                 <ResourceDictionary Source="ms-appx:///Control/Theme/WindowOverride.xaml"/>
+                <ResourceDictionary Source="ms-appx:///Control/TokenizingTextBox/TokenizingTextBox.xaml"/>
                 <ResourceDictionary Source="ms-appx:///View/Card/Primitive/CardProgressBar.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 

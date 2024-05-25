@@ -1,12 +1,10 @@
 ﻿// Copyright (c) DGP Studio. All rights reserved.
 // Licensed under the MIT license.
 
-using CommunityToolkit.WinUI;
-using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Snap.Hutao.Control.Extension;
+using Snap.Hutao.Control.TokenizingTextBox;
 using System.Collections;
 
 namespace Snap.Hutao.Control.AutoSuggestBox;
@@ -14,33 +12,16 @@ namespace Snap.Hutao.Control.AutoSuggestBox;
 [DependencyProperty("FilterCommand", typeof(ICommand))]
 [DependencyProperty("FilterCommandParameter", typeof(object))]
 [DependencyProperty("AvailableTokens", typeof(IReadOnlyDictionary<string, SearchToken>))]
-internal sealed partial class AutoSuggestTokenBox : TokenizingTextBox
+internal sealed partial class AutoSuggestTokenBox : TokenizingTextBox.TokenizingTextBox
 {
     public AutoSuggestTokenBox()
     {
-        DefaultStyleKey = typeof(TokenizingTextBox);
+        DefaultStyleKey = typeof(TokenizingTextBox.TokenizingTextBox);
         TextChanged += OnFilterSuggestionRequested;
         QuerySubmitted += OnQuerySubmitted;
         TokenItemAdding += OnTokenItemAdding;
         TokenItemAdded += OnTokenItemCollectionChanged;
         TokenItemRemoved += OnTokenItemCollectionChanged;
-        Loaded += OnLoaded;
-    }
-
-    private void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        if (this.FindDescendant("SuggestionsPopup") is Popup { Child: Border { Child: ListView listView } border })
-        {
-            IAppResourceProvider appResourceProvider = this.ServiceProvider().GetRequiredService<IAppResourceProvider>();
-
-            listView.Background = null;
-            listView.Margin = appResourceProvider.GetResource<Thickness>("AutoSuggestListPadding");
-
-            border.Background = appResourceProvider.GetResource<Microsoft.UI.Xaml.Media.Brush>("AutoSuggestBoxSuggestionsListBackground");
-            CornerRadius overlayCornerRadius = appResourceProvider.GetResource<CornerRadius>("OverlayCornerRadius");
-            CornerRadiusFilterConverter cornerRadiusFilterConverter = new() { Filter = CornerRadiusFilterKind.Bottom };
-            border.CornerRadius = (CornerRadius)cornerRadiusFilterConverter.Convert(overlayCornerRadius, typeof(CornerRadius), default, default);
-        }
     }
 
     private void OnFilterSuggestionRequested(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -73,7 +54,7 @@ internal sealed partial class AutoSuggestTokenBox : TokenizingTextBox
         CommandInvocation.TryExecute(FilterCommand, FilterCommandParameter);
     }
 
-    private void OnTokenItemAdding(TokenizingTextBox sender, TokenItemAddingEventArgs args)
+    private void OnTokenItemAdding(TokenizingTextBox.TokenizingTextBox sender, TokenItemAddingEventArgs args)
     {
         if (string.IsNullOrWhiteSpace(args.TokenText))
         {
@@ -90,7 +71,7 @@ internal sealed partial class AutoSuggestTokenBox : TokenizingTextBox
         }
     }
 
-    private void OnTokenItemCollectionChanged(TokenizingTextBox sender, object args)
+    private void OnTokenItemCollectionChanged(TokenizingTextBox.TokenizingTextBox sender, object args)
     {
         if (args is SearchToken { Kind: SearchTokenKind.None } token)
         {

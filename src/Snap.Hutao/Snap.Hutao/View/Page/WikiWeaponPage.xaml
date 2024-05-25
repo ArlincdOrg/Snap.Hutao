@@ -184,6 +184,7 @@
                                 MaximumTokens="5"
                                 PlaceholderText="{shcm:ResourceString Name=ViewPageWiKiWeaponAutoSuggestBoxPlaceHolder}"
                                 QueryIcon="{cw:FontIconSource Glyph=&#xE721;}"
+                                Style="{StaticResource DefaultTokenizingTextBoxStyle}"
                                 SuggestedItemTemplate="{StaticResource TokenTemplate}"
                                 SuggestedItemsSource="{Binding AvailableTokens.Values}"
                                 Text="{Binding FilterToken, Mode=TwoWay}"

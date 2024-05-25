@@ -109,6 +109,8 @@
     <None Remove="Control\Theme\TransitionCollection.xaml" />
     <None Remove="Control\Theme\Uri.xaml" />
     <None Remove="Control\Theme\WindowOverride.xaml" />
+    <None Remove="Control\TokenizingTextBox\TokenizingTextBox.xaml" />
+    <None Remove="Control\TokenizingTextBox\TokenizingTextBoxItem.xaml" />
     <None Remove="Core\Windowing\NotifyIcon\NotifyIconContextMenu.xaml" />
     <None Remove="GuideWindow.xaml" />
     <None Remove="IdentifyMonitorWindow.xaml" />
@@ -309,7 +311,6 @@
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" Version="8.0.240109" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Segmented" Version="8.0.240109" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.0.240109" />
-    <PackageReference Include="CommunityToolkit.WinUI.Controls.TokenizingTextBox" Version="8.0.240109" />
     <PackageReference Include="CommunityToolkit.WinUI.Media" Version="8.0.240109" />
     <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.5" />
@@ -360,6 +361,16 @@
        package has not yet been restored -->
   <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnablePreviewMsixTooling)'=='true'">
     <ProjectCapability Include="Msix" />
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="Control\TokenizingTextBox\TokenizingTextBoxItem.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="Control\TokenizingTextBox\TokenizingTextBox.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Page Update="Core\Windowing\NotifyIcon\NotifyIconContextMenu.xaml">
