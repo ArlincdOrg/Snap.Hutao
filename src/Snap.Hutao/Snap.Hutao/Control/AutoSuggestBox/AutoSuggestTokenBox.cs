@@ -17,14 +17,9 @@ internal sealed partial class AutoSuggestTokenBox : TokenizingTextBox.Tokenizing
     public AutoSuggestTokenBox()
     {
         DefaultStyleKey = typeof(TokenizingTextBox.TokenizingTextBox);
-        TextChanged += OnFilterSuggestionRequested;
-        QuerySubmitted += OnQuerySubmitted;
-        TokenItemAdding += OnTokenItemAdding;
-        TokenItemAdded += OnTokenItemCollectionChanged;
-        TokenItemRemoved += OnTokenItemCollectionChanged;
     }
 
-    private void OnFilterSuggestionRequested(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    public override void OnTextChanged(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         if (string.IsNullOrWhiteSpace(Text))
         {
@@ -44,7 +39,7 @@ internal sealed partial class AutoSuggestTokenBox : TokenizingTextBox.Tokenizing
         }
     }
 
-    private void OnQuerySubmitted(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    public override void OnQuerySubmitted(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
         if (args.ChosenSuggestion is not null)
         {
@@ -54,7 +49,7 @@ internal sealed partial class AutoSuggestTokenBox : TokenizingTextBox.Tokenizing
         CommandInvocation.TryExecute(FilterCommand, FilterCommandParameter);
     }
 
-    private void OnTokenItemAdding(TokenizingTextBox.TokenizingTextBox sender, TokenItemAddingEventArgs args)
+    public override void OnTokenItemAdding(TokenizingTextBox.TokenizingTextBox sender, TokenItemAddingEventArgs args)
     {
         if (string.IsNullOrWhiteSpace(args.TokenText))
         {
@@ -71,13 +66,21 @@ internal sealed partial class AutoSuggestTokenBox : TokenizingTextBox.Tokenizing
         }
     }
 
-    private void OnTokenItemCollectionChanged(TokenizingTextBox.TokenizingTextBox sender, object args)
+    public override void OnTokenItemAdded(TokenizingTextBox.TokenizingTextBox sender, object args)
     {
         if (args is SearchToken { Kind: SearchTokenKind.None } token)
         {
             ((IList)sender.ItemsSource).Remove(token);
         }
 
+        base.OnTokenItemAdded(sender, args);
+
+        FilterCommand.TryExecute(FilterCommandParameter);
+    }
+
+    public override void OnTokenItemRemoved(TokenizingTextBox.TokenizingTextBox sender, object args)
+    {
+        base.OnTokenItemRemoved(sender, args);
         FilterCommand.TryExecute(FilterCommandParameter);
     }
 }

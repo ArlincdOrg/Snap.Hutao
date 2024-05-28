@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using CommunityToolkit.WinUI;
-using CommunityToolkit.WinUI.Deferred;
 using CommunityToolkit.WinUI.Helpers;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -10,8 +9,8 @@ using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using Windows.ApplicationModel.DataTransfer;
-using Windows.Foundation;
 using Windows.Foundation.Metadata;
 using Windows.System;
 using Windows.UI.Core;
@@ -56,11 +55,12 @@ internal partial class TokenizingTextBox : ListViewBase
     private InterspersedObservableCollection innerItemsSource;
     private ITokenStringContainer currentTextEdit; // Don't update this directly outside of initialization, use UpdateCurrentTextEdit Method
     private ITokenStringContainer lastTextEdit;
+    private TokenizingTextBoxItem lastItem;
 
     public TokenizingTextBox()
     {
         // Setup our base state of our collection
-        innerItemsSource = new InterspersedObservableCollection(new ObservableCollection<object>()); // TODO: Test this still will let us bind to ItemsSource in XAML?
+        innerItemsSource = new(new ObservableCollection<object>()); // TODO: Test this still will let us bind to ItemsSource in XAML?
         currentTextEdit = lastTextEdit = new PretokenStringContainer(true);
         innerItemsSource.Insert(innerItemsSource.Count, currentTextEdit);
         ItemsSource = innerItemsSource;
@@ -69,28 +69,15 @@ internal partial class TokenizingTextBox : ListViewBase
         DefaultStyleKey = typeof(TokenizingTextBox);
 
         // TODO: Do we want to support ItemsSource better? Need to investigate how that works with adding...
-        RegisterPropertyChangedCallback(ItemsSourceProperty, ItemsSource_PropertyChanged);
-        PreviewKeyDown += TokenizingTextBox_PreviewKeyDown;
-        PreviewKeyUp += TokenizingTextBox_PreviewKeyUp;
-        CharacterReceived += TokenizingTextBox_CharacterReceived;
-        ItemClick += TokenizingTextBox_ItemClick;
+        RegisterPropertyChangedCallback(ItemsSourceProperty, OnItemsSourceChanged);
+        PreviewKeyDown += OnPreviewKeyDown;
+        PreviewKeyUp += OnPreviewKeyUp;
+        CharacterReceived += OnCharacterReceived;
+        ItemClick += OnItemClick;
+        Loaded += OnLoaded;
 
         dispatcherQueue = DispatcherQueue;
     }
-
-    public event TypedEventHandler<Microsoft.UI.Xaml.Controls.AutoSuggestBox, AutoSuggestBoxTextChangedEventArgs>? TextChanged;
-
-    public event TypedEventHandler<Microsoft.UI.Xaml.Controls.AutoSuggestBox, AutoSuggestBoxSuggestionChosenEventArgs>? SuggestionChosen;
-
-    public event TypedEventHandler<Microsoft.UI.Xaml.Controls.AutoSuggestBox, AutoSuggestBoxQuerySubmittedEventArgs>? QuerySubmitted;
-
-    public event TypedEventHandler<TokenizingTextBox, TokenItemAddingEventArgs>? TokenItemAdding;
-
-    public event TypedEventHandler<TokenizingTextBox, object>? TokenItemAdded;
-
-    public event TypedEventHandler<TokenizingTextBox, TokenItemRemovingEventArgs>? TokenItemRemoving;
-
-    public event TypedEventHandler<TokenizingTextBox, object>? TokenItemRemoved;
 
     private enum MoveDirection
     {
@@ -113,33 +100,13 @@ internal partial class TokenizingTextBox : ListViewBase
         get => PrepareSelectionForClipboard();
     }
 
-    public void RaiseQuerySubmitted(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
-    {
-        QuerySubmitted?.Invoke(sender, args);
-    }
-
-    public void RaiseSuggestionChosen(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
-    {
-        SuggestionChosen?.Invoke(sender, args);
-    }
-
-    public void RaiseTextChanged(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
-    {
-        TextChanged?.Invoke(sender, args);
-    }
-
-    public void AddTokenItem(object data, bool atEnd = false)
-    {
-        _ = AddTokenAsync(data, atEnd);
-    }
-
-    public async ValueTask ClearAsync()
+    public void Clear()
     {
         while (innerItemsSource.Count > 1)
         {
             if (ContainerFromItem(innerItemsSource[0]) is TokenizingTextBoxItem container)
             {
-                if (!await RemoveTokenAsync(container, innerItemsSource[0]).ConfigureAwait(true))
+                if (!RemoveToken(container, innerItemsSource[0]))
                 {
                     // if a removal operation fails then stop the clear process
                     break;
@@ -152,7 +119,7 @@ internal partial class TokenizingTextBox : ListViewBase
         Text = string.Empty;
     }
 
-    public async Task AddTokenAsync(object data, bool? atEnd = default)
+    public void AddToken(object data, bool atEnd = false)
     {
         if (MaximumTokens >= 0 && MaximumTokens <= innerItemsSource.ItemsSource.Count)
         {
@@ -160,10 +127,10 @@ internal partial class TokenizingTextBox : ListViewBase
             return;
         }
 
-        if (data is string str && TokenItemAdding is not null)
+        if (data is string str)
         {
             TokenItemAddingEventArgs tiaea = new(str);
-            await TokenItemAdding.InvokeAsync(this, tiaea).ConfigureAwait(true);
+            OnTokenItemAdding(this, tiaea);
 
             if (tiaea.Cancel)
             {
@@ -177,7 +144,7 @@ internal partial class TokenizingTextBox : ListViewBase
         }
 
         // If we've been typing in the last box, just add this to the end of our collection
-        if (atEnd == true || currentTextEdit == lastTextEdit)
+        if (atEnd || currentTextEdit == lastTextEdit)
         {
             innerItemsSource.InsertAt(innerItemsSource.Count - 1, data);
         }
@@ -198,12 +165,12 @@ internal partial class TokenizingTextBox : ListViewBase
         TokenizingTextBoxItem last = (TokenizingTextBoxItem)ContainerFromItem(lastTextEdit);
         last?.AutoSuggestTextBox.Focus(FocusState.Keyboard);
 
-        TokenItemAdded?.Invoke(this, data);
+        OnTokenItemAdded(this, data);
 
         GuardAgainstPlaceholderTextLayoutIssue();
     }
 
-    public async ValueTask RemoveAllSelectedTokens()
+    public void RemoveAllSelectedTokens()
     {
         while (SelectedItems.Count > 0)
         {
@@ -217,19 +184,18 @@ internal partial class TokenizingTextBox : ListViewBase
                         TextBox asb = container.AutoSuggestTextBox;
 
                         // grab any selected text
-                        string tempStr = asb.SelectionStart == 0
+                        string tempStr = asb.SelectionStart is 0
                             ? string.Empty
                             : asb.Text[..asb.SelectionStart];
                         tempStr +=
-                            asb.SelectionStart +
-                            asb.SelectionLength < asb.Text.Length
+                            asb.SelectionStart + asb.SelectionLength < asb.Text.Length
                                 ? asb.Text[(asb.SelectionStart + asb.SelectionLength)..]
                                 : string.Empty;
 
                         if (tempStr.Length is 0)
                         {
                             // Need to be careful not to remove the last item in the list
-                            await RemoveTokenAsync(container).ConfigureAwait(true);
+                            RemoveToken(container);
                         }
                         else
                         {
@@ -239,12 +205,12 @@ internal partial class TokenizingTextBox : ListViewBase
                     else
                     {
                         // if the item is a token just remove it.
-                        await RemoveTokenAsync(container).ConfigureAwait(true);
+                        RemoveToken(container);
                     }
                 }
                 else
                 {
-                    if (SelectedItems.Count == 1)
+                    if (SelectedItems.Count is 1)
                     {
                         // at this point we have one selection and its the default textbox.
                         // stop the iteration here
@@ -302,6 +268,36 @@ internal partial class TokenizingTextBox : ListViewBase
     {
         this.DeselectAll();
         ClearAllTextSelections(ignoreItem);
+    }
+
+    public virtual void OnTextChanged(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+    }
+
+    public virtual void OnSuggestionsChosen(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+    }
+
+    public virtual void OnQuerySubmitted(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+    }
+
+    public virtual void OnTokenItemAdding(TokenizingTextBox sender, TokenItemAddingEventArgs args)
+    {
+    }
+
+    public virtual void OnTokenItemAdded(TokenizingTextBox sender, object args)
+    {
+        OnTokenCountChanged(sender, args);
+    }
+
+    public virtual void OnTokenItemRemoving(TokenizingTextBox sender, TokenItemRemovingEventArgs args)
+    {
+    }
+
+    public virtual void OnTokenItemRemoved(TokenizingTextBox sender, object args)
+    {
+        OnTokenCountChanged(sender, args);
     }
 
     protected void UpdateCurrentTextEdit(ITokenStringContainer edit)
@@ -433,14 +429,14 @@ internal partial class TokenizingTextBox : ListViewBase
                     {
                         // Force remove the items. No warning and no option to cancel.
                         ttb.innerItemsSource.Remove(token);
-                        ttb.TokenItemRemoved?.Invoke(ttb, token);
+                        ttb.OnTokenItemRemoved(ttb, token);
                     }
                 }
             }
         }
     }
 
-    private void ItemsSource_PropertyChanged(DependencyObject sender, DependencyProperty dp)
+    private void OnItemsSourceChanged(DependencyObject sender, DependencyProperty dp)
     {
         // If we're given a different ItemsSource, we need to wrap that collection in our helper class.
         if (ItemsSource is { } and not InterspersedObservableCollection)
@@ -464,7 +460,7 @@ internal partial class TokenizingTextBox : ListViewBase
         }
     }
 
-    private void TokenizingTextBox_ItemClick(object sender, ItemClickEventArgs e)
+    private void OnItemClick(object sender, ItemClickEventArgs e)
     {
         // If the user taps an item in the list, make sure to clear any text selection as required
         // Note, token selection is cleared by the listview default behavior
@@ -476,7 +472,7 @@ internal partial class TokenizingTextBox : ListViewBase
         }
     }
 
-    private void TokenizingTextBox_PreviewKeyUp(object sender, KeyRoutedEventArgs e)
+    private void OnPreviewKeyUp(object sender, KeyRoutedEventArgs e)
     {
         switch (e.Key)
         {
@@ -499,7 +495,7 @@ internal partial class TokenizingTextBox : ListViewBase
         }
     }
 
-    private async void TokenizingTextBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         switch (e.Key)
         {
@@ -519,7 +515,7 @@ internal partial class TokenizingTextBox : ListViewBase
                     CopySelectedToClipboard();
 
                     // now clear all selected tokens and text, or all if none are selected
-                    await RemoveAllSelectedTokens().ConfigureAwait(false);
+                    RemoveAllSelectedTokens();
                 }
 
                 break;
@@ -546,7 +542,7 @@ internal partial class TokenizingTextBox : ListViewBase
         }
     }
 
-    private async void TokenizingTextBox_CharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs args)
+    private void OnCharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs args)
     {
         TokenizingTextBoxItem container = (TokenizingTextBoxItem)ContainerFromItem(currentTextEdit);
 
@@ -556,7 +552,7 @@ internal partial class TokenizingTextBox : ListViewBase
             {
                 int index = innerItemsSource.IndexOf(SelectedItems.First());
 
-                await RemoveAllSelectedTokens().ConfigureAwait(false);
+                RemoveAllSelectedTokens();
 
                 void RemoveOldItems()
                 {
@@ -672,24 +668,21 @@ internal partial class TokenizingTextBox : ListViewBase
         }
     }
 
-    private async ValueTask<bool> RemoveTokenAsync(TokenizingTextBoxItem item, object? data = null)
+    private bool RemoveToken(TokenizingTextBoxItem item, object? data = default)
     {
         data ??= ItemFromContainer(item);
 
-        if (TokenItemRemoving is not null)
-        {
-            TokenItemRemovingEventArgs tirea = new(data, item);
-            await TokenItemRemoving.InvokeAsync(this, tirea).ConfigureAwait(true);
+        TokenItemRemovingEventArgs tirea = new(data, item);
+        OnTokenItemRemoving(this, tirea);
 
-            if (tirea.Cancel)
-            {
-                return false;
-            }
+        if (tirea.Cancel)
+        {
+            return false;
         }
 
         innerItemsSource.Remove(data);
 
-        TokenItemRemoved?.Invoke(this, data);
+        OnTokenItemRemoved(this, data);
 
         GuardAgainstPlaceholderTextLayoutIssue();
 
@@ -866,7 +859,7 @@ internal partial class TokenizingTextBox : ListViewBase
         return false;
     }
 
-    private async void TokenizingTextBoxItem_ClearAllAction(TokenizingTextBoxItem sender, RoutedEventArgs args)
+    private void TokenizingTextBoxItem_ClearAllAction(TokenizingTextBoxItem sender, RoutedEventArgs args)
     {
         // find the first item selected
         int newSelectedIndex = -1;
@@ -876,7 +869,7 @@ internal partial class TokenizingTextBox : ListViewBase
             newSelectedIndex = SelectedRanges[0].FirstIndex - 1;
         }
 
-        await RemoveAllSelectedTokens().ConfigureAwait(true);
+        RemoveAllSelectedTokens();
 
         SelectedIndex = newSelectedIndex;
 
@@ -892,9 +885,9 @@ internal partial class TokenizingTextBox : ListViewBase
         }
     }
 
-    private async void TokenizingTextBoxItem_ClearClicked(TokenizingTextBoxItem sender, RoutedEventArgs? args)
+    private void TokenizingTextBoxItem_ClearClicked(TokenizingTextBoxItem sender, RoutedEventArgs? args)
     {
-        await RemoveTokenAsync(sender).ConfigureAwait(true);
+        RemoveToken(sender);
     }
 
     private void CopySelectedToClipboard()
@@ -947,5 +940,36 @@ internal partial class TokenizingTextBox : ListViewBase
         }
 
         return tokenString;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        lastItem = (TokenizingTextBoxItem)ContainerFromIndex(Items.Count - 1);
+        lastItem.AutoSuggestBox.Loaded += OnLastItemLoaded;
+    }
+
+    private void OnLastItemLoaded(object sender, RoutedEventArgs e)
+    {
+        OnTokenCountChanged(this, default!);
+    }
+
+    private void OnTokenCountChanged(TokenizingTextBox sender, object args)
+    {
+        if (lastItem.AutoSuggestBox.FindDescendant("PART_TokensCounter") is not TextBlock maxTokensCounter)
+        {
+            return;
+        }
+
+        int currentTokens = innerItemsSource.ItemsSource.Count;
+        int maxTokens = MaximumTokens;
+
+        maxTokensCounter.Text = $"{currentTokens}/{maxTokens}";
+        maxTokensCounter.Visibility = Visibility.Visible;
+
+        string targetState = (currentTokens >= maxTokens)
+            ? MaxReachedState
+            : MaxUnreachedState;
+
+        VisualStateManager.GoToState(lastItem.AutoSuggestTextBox, targetState, true);
     }
 }

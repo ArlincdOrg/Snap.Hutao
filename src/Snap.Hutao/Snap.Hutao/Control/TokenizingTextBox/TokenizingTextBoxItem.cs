@@ -14,13 +14,13 @@ namespace Snap.Hutao.Control.TokenizingTextBox;
 
 [DependencyProperty("ClearButtonStyle", typeof(Style))]
 [DependencyProperty("Owner", typeof(TokenizingTextBox))]
-[TemplatePart(Name = PART_ClearButton, Type = typeof(ButtonBase))] //// Token case
+[TemplatePart(Name = PART_RemoveButton, Type = typeof(ButtonBase))] //// Token case
 [TemplatePart(Name = PART_AutoSuggestBox, Type = typeof(Microsoft.UI.Xaml.Controls.AutoSuggestBox))] //// String case
 [TemplatePart(Name = PART_TokensCounter, Type = typeof(TextBlock))]
 [SuppressMessage("", "SA1124")]
 internal partial class TokenizingTextBoxItem : ListViewItem
 {
-    private const string PART_ClearButton = "PART_RemoveButton";
+    private const string PART_RemoveButton = "PART_RemoveButton";
     private const string PART_AutoSuggestBox = "PART_AutoSuggestBox";
     private const string PART_TokensCounter = "PART_TokensCounter";
     private const string QueryButton = "QueryButton";
@@ -36,8 +36,8 @@ internal partial class TokenizingTextBoxItem : ListViewItem
         DefaultStyleKey = typeof(TokenizingTextBoxItem);
 
         // TODO: only add these if token?
-        RightTapped += TokenizingTextBoxItem_RightTapped;
-        KeyDown += TokenizingTextBoxItem_KeyDown;
+        RightTapped += OnRightTapped;
+        KeyDown += OnKeyDown;
     }
 
     public event TypedEventHandler<TokenizingTextBoxItem, RoutedEventArgs>? AutoSuggestTextBoxLoaded;
@@ -46,7 +46,9 @@ internal partial class TokenizingTextBoxItem : ListViewItem
 
     public event TypedEventHandler<TokenizingTextBoxItem, RoutedEventArgs>? ClearAllAction;
 
-    public TextBox AutoSuggestTextBox { get => autoSuggestTextBox; }
+    public Microsoft.UI.Xaml.Controls.AutoSuggestBox AutoSuggestBox { get => autoSuggestBox; set => autoSuggestBox = value; }
+
+    public TextBox AutoSuggestTextBox { get => autoSuggestTextBox; set => autoSuggestTextBox = value; }
 
     public bool UseCharacterAsUser { get; set; }
 
@@ -71,21 +73,20 @@ internal partial class TokenizingTextBoxItem : ListViewItem
         if (autoSuggestBox is not null)
         {
             autoSuggestBox.Text = text;
+            return;
         }
-        else
-        {
-            void WaitForLoad(object s, RoutedEventArgs eargs)
-            {
-                if (autoSuggestTextBox is not null)
-                {
-                    autoSuggestTextBox.Text = text;
-                }
 
-                AutoSuggestTextBoxLoaded -= WaitForLoad;
+        void WaitForLoad(object s, RoutedEventArgs eargs)
+        {
+            if (autoSuggestTextBox is not null)
+            {
+                autoSuggestTextBox.Text = text;
             }
 
-            AutoSuggestTextBoxLoaded += WaitForLoad;
+            AutoSuggestTextBoxLoaded -= WaitForLoad;
         }
+
+        AutoSuggestTextBoxLoaded += WaitForLoad;
     }
 
     /// <inheritdoc/>
@@ -103,7 +104,7 @@ internal partial class TokenizingTextBoxItem : ListViewItem
             clearButton.Click -= ClearButton_Click;
         }
 
-        clearButton = (Button)GetTemplateChild(PART_ClearButton);
+        clearButton = (Button)GetTemplateChild(PART_RemoveButton);
 
         if (clearButton is not null)
         {
@@ -116,12 +117,12 @@ internal partial class TokenizingTextBoxItem : ListViewItem
         ClearClicked?.Invoke(this, e);
     }
 
-    private void TokenizingTextBoxItem_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    private void OnRightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         ContextFlyout.ShowAt(this);
     }
 
-    private void TokenizingTextBoxItem_KeyDown(object sender, KeyRoutedEventArgs e)
+    private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (Content is not ITokenStringContainer)
         {
@@ -211,9 +212,9 @@ internal partial class TokenizingTextBoxItem : ListViewItem
         }
     }
 
-    private async void AutoSuggestBox_QuerySubmitted(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    private void AutoSuggestBox_QuerySubmitted(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
-        Owner.RaiseQuerySubmitted(sender, args);
+        Owner.OnQuerySubmitted(sender, args);
 
         object? chosenItem = default;
         if (args.ChosenSuggestion is not null)
@@ -227,7 +228,7 @@ internal partial class TokenizingTextBoxItem : ListViewItem
 
         if (chosenItem is not null)
         {
-            await Owner.AddTokenAsync(chosenItem).ConfigureAwait(true); // TODO: Need to pass index?
+            Owner.AddToken(chosenItem); // TODO: Need to pass index?
             sender.Text = string.Empty;
             Owner.Text = string.Empty;
             sender.Focus(FocusState.Programmatic);
@@ -236,7 +237,7 @@ internal partial class TokenizingTextBoxItem : ListViewItem
 
     private void AutoSuggestBox_SuggestionChosen(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
     {
-        Owner.RaiseSuggestionChosen(sender, args);
+        Owner.OnSuggestionsChosen(sender, args);
     }
 
     private void AutoSuggestBox_TextChanged(Microsoft.UI.Xaml.Controls.AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -259,7 +260,7 @@ internal partial class TokenizingTextBoxItem : ListViewItem
             args.Reason = AutoSuggestionBoxTextChangeReason.UserInput;
         }
 
-        Owner.RaiseTextChanged(sender, args);
+        Owner.OnTextChanged(sender, args);
 
         string t = sender.Text?.Trim() ?? string.Empty;
 
@@ -276,7 +277,7 @@ internal partial class TokenizingTextBoxItem : ListViewItem
                 token = token.Trim();
                 if (token.Length > 0)
                 {
-                    _ = Owner.AddTokenAsync(token); //// TODO: Pass Index?
+                    Owner.AddToken(token); //// TODO: Pass Index?
                 }
             }
 
@@ -322,18 +323,10 @@ internal partial class TokenizingTextBoxItem : ListViewItem
 
     private void OnASBLoaded(object sender, RoutedEventArgs e)
     {
-        if (autoSuggestTextBox is not null)
+        if (autoSuggestBox.FindDescendant(QueryButton) is Button queryButton)
         {
-            autoSuggestTextBox.PreviewKeyDown -= AutoSuggestTextBox_PreviewKeyDown;
-            autoSuggestTextBox.TextChanging -= AutoSuggestTextBox_TextChangingAsync;
-            autoSuggestTextBox.SelectionChanged -= AutoSuggestTextBox_SelectionChanged;
-            autoSuggestTextBox.SelectionChanging -= AutoSuggestTextBox_SelectionChanging;
+            queryButton.Visibility = Owner.QueryIcon is not null ? Visibility.Visible : Visibility.Collapsed;
         }
-
-        autoSuggestTextBox ??= autoSuggestBox.FindDescendant<TextBox>()!;
-
-        UpdateQueryIconVisibility();
-        UpdateTokensCounter(this);
 
         // Local function for Selection changed
         void AutoSuggestTextBox_SelectionChanged(object box, RoutedEventArgs args)
@@ -348,19 +341,29 @@ internal partial class TokenizingTextBoxItem : ListViewItem
         }
 
         // local function for clearing selection on interaction with text box
-        async void AutoSuggestTextBox_TextChangingAsync(TextBox o, TextBoxTextChangingEventArgs args)
+        void AutoSuggestTextBox_TextChanging(TextBox o, TextBoxTextChangingEventArgs args)
         {
             // remove any selected tokens.
             if (Owner.SelectedItems.Count > 1)
             {
-                await Owner.RemoveAllSelectedTokens().ConfigureAwait(true);
+                Owner.RemoveAllSelectedTokens();
             }
         }
 
         if (autoSuggestTextBox is not null)
         {
+            autoSuggestTextBox.PreviewKeyDown -= AutoSuggestTextBox_PreviewKeyDown;
+            autoSuggestTextBox.TextChanging -= AutoSuggestTextBox_TextChanging;
+            autoSuggestTextBox.SelectionChanged -= AutoSuggestTextBox_SelectionChanged;
+            autoSuggestTextBox.SelectionChanging -= AutoSuggestTextBox_SelectionChanging;
+        }
+
+        autoSuggestTextBox = autoSuggestBox.FindDescendant<TextBox>()!;
+
+        if (autoSuggestTextBox is not null)
+        {
             autoSuggestTextBox.PreviewKeyDown += AutoSuggestTextBox_PreviewKeyDown;
-            autoSuggestTextBox.TextChanging += AutoSuggestTextBox_TextChangingAsync;
+            autoSuggestTextBox.TextChanging += AutoSuggestTextBox_TextChanging;
             autoSuggestTextBox.SelectionChanged += AutoSuggestTextBox_SelectionChanged;
             autoSuggestTextBox.SelectionChanging += AutoSuggestTextBox_SelectionChanging;
 
@@ -380,9 +383,7 @@ internal partial class TokenizingTextBoxItem : ListViewItem
 
     private void AutoSuggestTextBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (IsCaretAtStart &&
-            (e.Key is VirtualKey.Back ||
-             e.Key is VirtualKey.Left))
+        if (IsCaretAtStart && (e.Key is VirtualKey.Back or VirtualKey.Left))
         {
             // if the back key is pressed and there is any selection in the text box then the text box can handle it
             if ((e.Key is VirtualKey.Left && isSelectedFocusOnFirstCharacter) ||
@@ -421,60 +422,6 @@ internal partial class TokenizingTextBoxItem : ListViewItem
         {
             // Need to provide this shortcut from the textbox only, as ListViewBase will do it for us on token.
             Owner.SelectAllTokensAndText();
-        }
-    }
-
-    private void UpdateTokensCounter(TokenizingTextBoxItem ttbi)
-    {
-        if (autoSuggestBox?.FindDescendant(PART_TokensCounter) is TextBlock maxTokensCounter)
-        {
-            void OnTokenCountChanged(TokenizingTextBox ttb, object? value = default)
-            {
-                if (ttb.ItemsSource is InterspersedObservableCollection itemsSource)
-                {
-                    int currentTokens = itemsSource.ItemsSource.Count;
-                    int maxTokens = ttb.MaximumTokens;
-
-                    maxTokensCounter.Text = $"{currentTokens}/{maxTokens}";
-                    maxTokensCounter.Visibility = Visibility.Visible;
-
-                    string targetState = (currentTokens >= maxTokens)
-                        ? TokenizingTextBox.MaxReachedState
-                        : TokenizingTextBox.MaxUnreachedState;
-
-                    VisualStateManager.GoToState(autoSuggestTextBox, targetState, true);
-                }
-            }
-
-            ttbi.Owner.TokenItemAdded -= OnTokenCountChanged;
-            ttbi.Owner.TokenItemRemoved -= OnTokenCountChanged;
-
-            if (Content is ITokenStringContainer { IsLast: true } str && ttbi is { Owner.MaximumTokens: >= 0 })
-            {
-                ttbi.Owner.TokenItemAdded += OnTokenCountChanged;
-                ttbi.Owner.TokenItemRemoved += OnTokenCountChanged;
-                OnTokenCountChanged(ttbi.Owner);
-            }
-            else
-            {
-                maxTokensCounter.Visibility = Visibility.Collapsed;
-                maxTokensCounter.Text = string.Empty;
-            }
-        }
-    }
-
-    private void UpdateQueryIconVisibility()
-    {
-        if (autoSuggestBox.FindDescendant(QueryButton) is Button queryButton)
-        {
-            if (Owner.QueryIcon is not null)
-            {
-                queryButton.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                queryButton.Visibility = Visibility.Collapsed;
-            }
         }
     }
 }
